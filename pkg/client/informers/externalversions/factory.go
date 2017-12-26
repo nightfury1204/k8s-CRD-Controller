@@ -122,9 +122,9 @@ type SharedInformerFactory interface {
 	ForResource(resource schema.GroupVersionResource) (GenericInformer, error)
 	WaitForCacheSync(stopCh <-chan struct{}) map[reflect.Type]bool
 
-	Podwatchers() nahid_try_com.Interface
+	Nahid() nahid_try_com.Interface
 }
 
-func (f *sharedInformerFactory) Podwatchers() nahid_try_com.Interface {
+func (f *sharedInformerFactory) Nahid() nahid_try_com.Interface {
 	return nahid_try_com.New(f, f.namespace, f.tweakListOptions)
 }
