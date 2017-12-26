@@ -12,7 +12,7 @@ import (
 	kerr "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/util/strategicpatch"
+	"k8s.io/apimachinery/pkg/util/jsonmergepatch"
 	"k8s.io/apimachinery/pkg/util/wait"
 )
 
@@ -44,7 +44,7 @@ func PatchPodWatch(c clientver.Clientset, cur *nahidtrycomv1alpha1.PodWatch, tra
 		return nil, err
 	}
 
-	patch, err := strategicpatch.CreateTwoWayMergePatch(curJson, modJson, nahidtrycomv1alpha1.PodWatch{})
+	patch, err := jsonmergepatch.CreateThreeWayJSONMergePatch(curJson,modJson,curJson)
 	if err != nil {
 		return nil, err
 	}
@@ -52,7 +52,7 @@ func PatchPodWatch(c clientver.Clientset, cur *nahidtrycomv1alpha1.PodWatch, tra
 		return cur, nil
 	}
 	glog.V(3).Infof("Patching Podwatch %s/%s with %s.", cur.Namespace, cur.Name, string(patch))
-	return c.NahidV1alpha1().PodWatchs(apiv1.NamespaceDefault).Patch(cur.Name, types.StrategicMergePatchType, patch)
+	return c.NahidV1alpha1().PodWatchs(apiv1.NamespaceDefault).Patch(cur.Name, types.MergePatchType, patch)
 }
 
 func tryPatchPodWatch(c clientver.Clientset, meta metav1.ObjectMeta, transform func(watch *nahidtrycomv1alpha1.PodWatch) *nahidtrycomv1alpha1.PodWatch) (result *nahidtrycomv1alpha1.PodWatch, err error) {
