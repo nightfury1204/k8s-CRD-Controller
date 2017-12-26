@@ -17,7 +17,7 @@ limitations under the License.
 package scheme
 
 import (
-	podwatchersv1alpha1 "k8s-crd-controller/pkg/apis/nahid.try.com/v1alpha1"
+	nahidv1alpha1 "k8s-crd-controller/pkg/apis/nahid.try.com/v1alpha1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	schema "k8s.io/apimachinery/pkg/runtime/schema"
@@ -48,6 +48,6 @@ func init() {
 // After this, RawExtensions in Kubernetes types will serialize kube-aggregator types
 // correctly.
 func AddToScheme(scheme *runtime.Scheme) {
-	podwatchersv1alpha1.AddToScheme(scheme)
+	nahidv1alpha1.AddToScheme(scheme)
 
 }

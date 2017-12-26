@@ -60,13 +60,13 @@ func NewFilteredPodWatchInformer(client versioned.Interface, namespace string, r
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.PodwatchersV1alpha1().PodWatchs(namespace).List(options)
+				return client.NahidV1alpha1().PodWatchs(namespace).List(options)
 			},
 			WatchFunc: func(options v1.ListOptions) (watch.Interface, error) {
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.PodwatchersV1alpha1().PodWatchs(namespace).Watch(options)
+				return client.NahidV1alpha1().PodWatchs(namespace).Watch(options)
 			},
 		},
 		&nahid_try_com_v1alpha1.PodWatch{},

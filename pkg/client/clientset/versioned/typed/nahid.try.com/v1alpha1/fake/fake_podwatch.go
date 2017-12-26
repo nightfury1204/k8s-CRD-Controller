@@ -28,13 +28,13 @@ import (
 
 // FakePodWatchs implements PodWatchInterface
 type FakePodWatchs struct {
-	Fake *FakePodwatchersV1alpha1
+	Fake *FakeNahidV1alpha1
 	ns   string
 }
 
-var podwatchsResource = schema.GroupVersionResource{Group: "podwatchers.nahid.try.com", Version: "v1alpha1", Resource: "podwatchs"}
+var podwatchsResource = schema.GroupVersionResource{Group: "nahid.try.com", Version: "v1alpha1", Resource: "podwatchs"}
 
-var podwatchsKind = schema.GroupVersionKind{Group: "podwatchers.nahid.try.com", Version: "v1alpha1", Kind: "PodWatch"}
+var podwatchsKind = schema.GroupVersionKind{Group: "nahid.try.com", Version: "v1alpha1", Kind: "PodWatch"}
 
 // Get takes name of the podWatch, and returns the corresponding podWatch object, and an error if there is any.
 func (c *FakePodWatchs) Get(name string, options v1.GetOptions) (result *v1alpha1.PodWatch, err error) {

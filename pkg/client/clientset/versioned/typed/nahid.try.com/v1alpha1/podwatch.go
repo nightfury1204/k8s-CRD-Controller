@@ -52,7 +52,7 @@ type podWatchs struct {
 }
 
 // newPodWatchs returns a PodWatchs
-func newPodWatchs(c *PodwatchersV1alpha1Client, namespace string) *podWatchs {
+func newPodWatchs(c *NahidV1alpha1Client, namespace string) *podWatchs {
 	return &podWatchs{
 		client: c.RESTClient(),
 		ns:     namespace,

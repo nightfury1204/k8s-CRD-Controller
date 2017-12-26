@@ -7,6 +7,7 @@ import (
 	"github.com/golang/glog"
 
 	clientver "k8s-crd-controller/pkg/client/clientset/versioned"
+	myutil "k8s-crd-controller/pkg/client/clientset/versioned/typed/nahid.try.com/v1alpha1/util"
 
 	nahidtrycomv1alpha1 "k8s-crd-controller/pkg/apis/nahid.try.com/v1alpha1"
 	apiv1 "k8s.io/api/core/v1"
@@ -38,10 +39,10 @@ type Controller struct {
 func customListWatcherForPodWatch(clientset clientver.Clientset) *cache.ListWatch {
 	return &cache.ListWatch{
 		ListFunc: func(opts metav1.ListOptions) (runtime2.Object, error) {
-			return clientset.PodwatchersV1alpha1().PodWatchs(apiv1.NamespaceDefault).List(metav1.ListOptions{})
+			return clientset.NahidV1alpha1().PodWatchs(apiv1.NamespaceDefault).List(metav1.ListOptions{})
 		},
 		WatchFunc: func(opts metav1.ListOptions) (watch.Interface, error) {
-			return clientset.PodwatchersV1alpha1().PodWatchs(apiv1.NamespaceDefault).Watch(metav1.ListOptions{})
+			return clientset.NahidV1alpha1().PodWatchs(apiv1.NamespaceDefault).Watch(metav1.ListOptions{})
 		},
 	}
 }
@@ -205,6 +206,10 @@ func (c *Controller) performOpAccrodingToPodWatch(key string) error {
 			}
 
 			//create pod
+			//podWatch.Kind = "PodWatch"
+			//podWatch.APIVersion = "nahid.try.com/v1alpha1"
+			//fmt.Println("after-create-pod--->",podWatch)
+
 			err = c.updateStatusForPodWatch(podWatch, podWatch.Status.AvailabelReplicas, podWatch.Status.CurrentlyProcessing+1)
 			if err!=nil {
 				fmt.Println("Failed to update podWatch")
@@ -353,7 +358,7 @@ func (c *Controller) createPod(podTemplate nahidtrycomv1alpha1.PodTemplate, podW
 
 func (c *Controller) updateReplicaStatusForPodWatch(labels map[string]string) error {
 	for key, val :=  range labels {
-		podWatchs, err := c.clientset.PodwatchersV1alpha1().PodWatchs(apiv1.NamespaceDefault).List(metav1.ListOptions{})
+		podWatchs, err := c.clientset.NahidV1alpha1().PodWatchs(apiv1.NamespaceDefault).List(metav1.ListOptions{})
 		if err!=nil {
 			return err
 		}
@@ -373,7 +378,10 @@ func (c *Controller) updateReplicaStatusForPodWatch(labels map[string]string) er
 				}
 				availablePods := int32(len(podList.Items))
 				curP := podWatch.Status.CurrentlyProcessing+podWatch.Status.AvailabelReplicas-availablePods
-				c.updateStatusForPodWatch(&podWatch, availablePods, curP)
+				err =c.updateStatusForPodWatch(&podWatch, availablePods, curP)
+				if err!=nil {
+					return err
+				}
 			}
 		}
 
@@ -381,11 +389,12 @@ func (c *Controller) updateReplicaStatusForPodWatch(labels map[string]string) er
 	return nil
 }
 
-func (c *Controller) updateStatusForPodWatch(podWatch *nahidtrycomv1alpha1.PodWatch, numOfReplicas int32, currentlyP int32)  error {
-	podWatchCopy := podWatch.DeepCopy()
-	podWatchCopy.Status.AvailabelReplicas = numOfReplicas
-	podWatchCopy.Status.CurrentlyProcessing = currentlyP
-	_,err := c.clientset.PodwatchersV1alpha1().PodWatchs(apiv1.NamespaceDefault).Update(podWatchCopy)
+func (c *Controller) updateStatusForPodWatch(curPodWatch *nahidtrycomv1alpha1.PodWatch, numOfReplicas int32, currentlyP int32)  error {
+	_, err := myutil.PatchPodWatch(c.clientset, curPodWatch, func(podWatch *nahidtrycomv1alpha1.PodWatch) *nahidtrycomv1alpha1.PodWatch {
+		podWatch.Status.AvailabelReplicas = numOfReplicas
+		podWatch.Status.CurrentlyProcessing = currentlyP
+		return podWatch
+	})
 
 	return err
 }

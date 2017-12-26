@@ -18,8 +18,8 @@ package fake
 
 import (
 	clientset "k8s-crd-controller/pkg/client/clientset/versioned"
-	podwatchersv1alpha1 "k8s-crd-controller/pkg/client/clientset/versioned/typed/nahid.try.com/v1alpha1"
-	fakepodwatchersv1alpha1 "k8s-crd-controller/pkg/client/clientset/versioned/typed/nahid.try.com/v1alpha1/fake"
+	nahidv1alpha1 "k8s-crd-controller/pkg/client/clientset/versioned/typed/nahid.try.com/v1alpha1"
+	fakenahidv1alpha1 "k8s-crd-controller/pkg/client/clientset/versioned/typed/nahid.try.com/v1alpha1/fake"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/discovery"
@@ -60,12 +60,12 @@ func (c *Clientset) Discovery() discovery.DiscoveryInterface {
 
 var _ clientset.Interface = &Clientset{}
 
-// PodwatchersV1alpha1 retrieves the PodwatchersV1alpha1Client
-func (c *Clientset) PodwatchersV1alpha1() podwatchersv1alpha1.PodwatchersV1alpha1Interface {
-	return &fakepodwatchersv1alpha1.FakePodwatchersV1alpha1{Fake: &c.Fake}
+// NahidV1alpha1 retrieves the NahidV1alpha1Client
+func (c *Clientset) NahidV1alpha1() nahidv1alpha1.NahidV1alpha1Interface {
+	return &fakenahidv1alpha1.FakeNahidV1alpha1{Fake: &c.Fake}
 }
 
-// Podwatchers retrieves the PodwatchersV1alpha1Client
-func (c *Clientset) Podwatchers() podwatchersv1alpha1.PodwatchersV1alpha1Interface {
-	return &fakepodwatchersv1alpha1.FakePodwatchersV1alpha1{Fake: &c.Fake}
+// Nahid retrieves the NahidV1alpha1Client
+func (c *Clientset) Nahid() nahidv1alpha1.NahidV1alpha1Interface {
+	return &fakenahidv1alpha1.FakeNahidV1alpha1{Fake: &c.Fake}
 }

@@ -43,8 +43,8 @@ type PodSpec struct {
 //PodWatchStatus is the status for PodWatcher resource
 type PodWatchStatus struct {
 	AvailabelReplicas int32 `json:"availabelReplicas"`
-	CurrentlyProcessing int32 `json:"currently_processing"`
-	PodNameList []string `json:"pod_name_list"`
+	CurrentlyProcessing int32 `json:"currentlyProcessing"`
+	PodNameList []string `json:"podNameList"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
