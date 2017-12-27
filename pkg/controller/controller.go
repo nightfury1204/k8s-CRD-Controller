@@ -7,7 +7,7 @@ import (
 	"github.com/golang/glog"
 
 	clientver "k8s-crd-controller/pkg/client/clientset/versioned"
-	myutil "k8s-crd-controller/pkg/client/clientset/versioned/typed/nahid.try.com/v1alpha1/util"
+	myutil "k8s-crd-controller/pkg/util"
 
 	nahidtrycomv1alpha1 "k8s-crd-controller/pkg/apis/nahid.try.com/v1alpha1"
 	apiv1 "k8s.io/api/core/v1"
@@ -21,6 +21,14 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"math/rand"
 	"strconv"
+	"strings"
+)
+
+const (
+	inf int = 100000000
+	AllPods int = inf
+	Processing string = "processing"
+	Ready string = "ready"
 )
 
 type Controller struct {
@@ -34,15 +42,20 @@ type Controller struct {
 	podWatchIndexer  cache.Indexer
 	podWatchInformer cache.Controller
 	podWatchQueue    workqueue.RateLimitingInterface
+
+	//to find pod assigned to which podwatch
+	PodMapToPodWatch map[string]string
+	//Current status of pod
+	PodStatus map[string]string
 }
 
 func customListWatcherForPodWatch(clientset clientver.Clientset) *cache.ListWatch {
 	return &cache.ListWatch{
 		ListFunc: func(opts metav1.ListOptions) (runtime2.Object, error) {
-			return clientset.NahidV1alpha1().PodWatchs(apiv1.NamespaceDefault).List(metav1.ListOptions{})
+			return clientset.NahidV1alpha1().PodWatchs(apiv1.NamespaceDefault).List(metav1.ListOptions{IncludeUninitialized:true})
 		},
 		WatchFunc: func(opts metav1.ListOptions) (watch.Interface, error) {
-			return clientset.NahidV1alpha1().PodWatchs(apiv1.NamespaceDefault).Watch(metav1.ListOptions{})
+			return clientset.NahidV1alpha1().PodWatchs(apiv1.NamespaceDefault).Watch(metav1.ListOptions{IncludeUninitialized:true})
 		},
 	}
 }
@@ -136,6 +149,8 @@ func NewController(clientset clientver.Clientset, kubeClientset kubernetes.Clien
 		podWatchInformer: podWatchInformer,
 		podWatchIndexer:  podWatchIndexer,
 		podWatchQueue:    podWatchQueue,
+		PodMapToPodWatch: map[string]string{},
+		PodStatus: map[string]string{},
 	}
 }
 
@@ -193,31 +208,68 @@ func (c *Controller) performOpAccrodingToPodWatch(key string) error {
 		// is dependent on the actual instance, to detect that a Pod was recreated with the same name
 		podWatch := obj.(*nahidtrycomv1alpha1.PodWatch)
 
-		fmt.Printf("PodWatcher %s( avialable | required | current): %v | %v | %v\n", podWatch.GetName(),podWatch.Status.AvailabelReplicas,podWatch.Spec.Replicas,podWatch.Status.CurrentlyProcessing)
-
-		if podWatch.Status.AvailabelReplicas+podWatch.Status.CurrentlyProcessing == podWatch.Spec.Replicas {
-			//ignore
-		} else if podWatch.Status.AvailabelReplicas+podWatch.Status.CurrentlyProcessing < podWatch.Spec.Replicas {
-
-			err := c.createPod(podWatch.Spec.Template, podWatch.GetName())
-			if err!=nil {
-				fmt.Println("Failed to create pod")
-				return err
+		if podWatch.DeletionTimestamp != nil {
+			// finalizer
+			if myutil.HasFinalizer(podWatch.ObjectMeta,"finalizer.podwatch.nahid.try.com") {
+				//delete pods
+				//clear podMapToPodwatch,podStatus
+				c.PodMapToPodWatch = map[string]string {}
+				c.PodStatus = map[string]string {}
+				err := c.deletePod(podWatch.Spec.LabelSelector.MatchLabels, AllPods)
+				if err!=nil {
+					fmt.Println("failed to delete pod")
+					return err
+				}
+				_,err = myutil.PatchPodWatch(c.clientset,podWatch, func(podW *nahidtrycomv1alpha1.PodWatch) *nahidtrycomv1alpha1.PodWatch {
+					podW.ObjectMeta = myutil.RemoveFinalizer(podW.ObjectMeta,"finalizer.podwatch.nahid.try.com")
+					return podW
+				})
+				if err!=nil {
+					return err
+				}
 			}
 
-			//create pod
-			//podWatch.Kind = "PodWatch"
-			//podWatch.APIVersion = "nahid.try.com/v1alpha1"
-			//fmt.Println("after-create-pod--->",podWatch)
-
-			err = c.updateStatusForPodWatch(podWatch, podWatch.Status.AvailabelReplicas, podWatch.Status.CurrentlyProcessing+1)
-			if err!=nil {
-				fmt.Println("Failed to update podWatch")
-				return err
+		} else if podWatch.GetInitializers() != nil {
+			//initializer
+			pendingInitializers := podWatch.GetInitializers().Pending
+			if pendingInitializers[0].Name == "podwatchinit.nahid.try.com" {
+				//add finalizer
+				_,err := myutil.PatchPodWatch(c.clientset,podWatch, func(podW *nahidtrycomv1alpha1.PodWatch) *nahidtrycomv1alpha1.PodWatch {
+					podW.ObjectMeta = myutil.AddFinalizer(podW.ObjectMeta, "finalizer.podwatch.nahid.try.com")
+					podW.ObjectMeta = myutil.RemoveInitializer(podW.ObjectMeta)
+					return podW
+				})
+				if err!=nil {
+					return err
+				}
 			}
 		} else {
-			//delete pod
-			//currently not required
+			fmt.Printf("PodWatcher %s( avialable | required | current): %v | %v | %v\n", podWatch.GetName(),podWatch.Status.AvailabelReplicas,podWatch.Spec.Replicas,podWatch.Status.CurrentlyProcessing)
+
+			if podWatch.Status.AvailabelReplicas+podWatch.Status.CurrentlyProcessing == podWatch.Spec.Replicas {
+				//ignore
+			} else if podWatch.Status.AvailabelReplicas+podWatch.Status.CurrentlyProcessing < podWatch.Spec.Replicas {
+
+				err := c.createPod(podWatch.Spec.Template, podWatch.GetName())
+				if err!=nil {
+					fmt.Println("Failed to create pod")
+					return err
+				}
+
+				err = c.updateStatusForPodWatch(podWatch, podWatch.Status.AvailabelReplicas, podWatch.Status.CurrentlyProcessing+1)
+				if err!=nil {
+					fmt.Println("Failed to update podWatch")
+					return err
+				}
+			} else {
+				//delete pod
+				//currently not required
+				err := c.deletePod(podWatch.Spec.LabelSelector.MatchLabels, int(podWatch.Status.AvailabelReplicas+podWatch.Status.CurrentlyProcessing-podWatch.Spec.Replicas))
+				if err!=nil {
+					fmt.Println("failed to delete pod")
+					return err
+				}
+			}
 		}
 
 	}
@@ -237,16 +289,44 @@ func (c *Controller) performOpAccrodingToPod(key string) error {
 	if !exists {
 		// Below we will warm up our cache with a Pod, so that we will see a delete for one pod
 		fmt.Printf("Pod %s deleted\n", key)
+		values := strings.Split(key,"/")
+		podName := values[len(values)-1]
+		podWatchName,ok := c.PodMapToPodWatch[podName]
+		if ok {
+			podWatch,err := c.clientset.NahidV1alpha1().PodWatchs(apiv1.NamespaceDefault).Get(podWatchName,metav1.GetOptions{})
+			if err!=nil {
+				return err
+			}
+			err = c.updateStatusForPodWatch(podWatch, podWatch.Status.AvailabelReplicas-1,podWatch.Status.CurrentlyProcessing)
+			return err
+		}
+		delete(c.PodMapToPodWatch,podName)
+		delete(c.PodStatus,podName)
 	} else {
 		// Note that you also have to check the uid if you have a local controlled resource, which
 		// is dependent on the actual instance, to detect that a Pod was recreated with the same name
 		pod := obj.(*apiv1.Pod)
 
 		fmt.Printf("Sync/Add/Update for Pod %s\n", pod.GetName())
+		status,ok := c.PodStatus[pod.GetName()]
+		//pod is not assigned to podwatch
+		if !ok{
+			return nil
+		}
 
-		if pod.Status.Phase== apiv1.PodRunning || pod.Status.Phase== apiv1.PodSucceeded {
-			err := c.updateReplicaStatusForPodWatch(pod.GetObjectMeta().GetLabels())
-			return err
+		if (pod.Status.Phase== apiv1.PodRunning || pod.Status.Phase== apiv1.PodSucceeded) && status==Processing {
+			podWatchName,ok := c.PodMapToPodWatch[pod.GetName()]
+			if ok {
+				podWatch,err := c.clientset.NahidV1alpha1().PodWatchs(apiv1.NamespaceDefault).Get(podWatchName,metav1.GetOptions{})
+				if err!=nil {
+					return err
+				}
+				err = c.updateStatusForPodWatch(podWatch, podWatch.Status.AvailabelReplicas+1,podWatch.Status.CurrentlyProcessing-1)
+				if err != nil {
+					return err
+				}
+				c.PodStatus[pod.GetName()]=Ready
+			}
 		}
 
 	}
@@ -311,7 +391,7 @@ func (c *Controller) Run(threadiness int, stopCh chan struct{}) {
 	// Let the workers stop when we are done
 	defer c.podWatchQueue.ShutDown()
 	defer c.podQueue.ShutDown()
-	glog.Info("Starting PodWatch controller")
+	fmt.Println("Starting PodWatch controller")
 
 	go c.podWatchInformer.Run(stopCh)
 	go c.podInformer.Run(stopCh)
@@ -328,7 +408,7 @@ func (c *Controller) Run(threadiness int, stopCh chan struct{}) {
 	}
 
 	<-stopCh
-	glog.Info("Stopping PodWatch controller")
+	fmt.Println("Stopping PodWatch controller")
 }
 
 func (c *Controller) runWorkerForPodWatch() {
@@ -341,6 +421,7 @@ func (c *Controller) runWorkerForPod() {
 	}
 }
 
+//create pod according to podTemplate
 func (c *Controller) createPod(podTemplate nahidtrycomv1alpha1.PodTemplate, podWatchName string) error {
 	podClient := c.kubeClientset.CoreV1().Pods(apiv1.NamespaceDefault)
 	pod := &apiv1.Pod{
@@ -351,44 +432,40 @@ func (c *Controller) createPod(podTemplate nahidtrycomv1alpha1.PodTemplate, podW
 		Spec: podTemplate.Spec,
 	}
 
-	_, err := podClient.Create(pod)
-
+	result, err := podClient.Create(pod)
+	if err==nil {
+		c.PodMapToPodWatch[result.GetName()]=podWatchName
+		c.PodStatus[result.GetName()]=Processing
+	}
 	return err
 }
 
-func (c *Controller) updateReplicaStatusForPodWatch(labels map[string]string) error {
-	for key, val :=  range labels {
-		podWatchs, err := c.clientset.NahidV1alpha1().PodWatchs(apiv1.NamespaceDefault).List(metav1.ListOptions{})
+//delete pods whose lebel matches selector
+func (c *Controller) deletePod(selector map[string]string ,podDeleteLimit int) error {
+	podClient := c.kubeClientset.CoreV1().Pods(apiv1.NamespaceDefault)
+	for key,val := range selector {
+		podList, err := c.kubeClientset.CoreV1().Pods(apiv1.NamespaceDefault).List(metav1.ListOptions{LabelSelector:key+"="+val})
 		if err!=nil {
 			return err
 		}
-		for _,podWatch := range podWatchs.Items {
-
-			ok := false
-			for mKey,mVal := range podWatch.Spec.MatchLabels {
-				if mKey==key && mVal==val {
-					ok = true
-				}
-			}
-
-			if ok {
-				podList, err := c.kubeClientset.CoreV1().Pods(apiv1.NamespaceDefault).List(metav1.ListOptions{LabelSelector:key+"="+val})
-				if err != nil {
-					return err
-				}
-				availablePods := int32(len(podList.Items))
-				curP := podWatch.Status.CurrentlyProcessing+podWatch.Status.AvailabelReplicas-availablePods
-				err =c.updateStatusForPodWatch(&podWatch, availablePods, curP)
+		cnt :=int(0)
+		if podDeleteLimit==AllPods {
+			podDeleteLimit = len(podList.Items)
+		}
+		for _,pod := range podList.Items {
+			if cnt < podDeleteLimit {
+				err = podClient.Delete(pod.GetName(),&metav1.DeleteOptions{})
 				if err!=nil {
 					return err
 				}
+				cnt++
 			}
 		}
-
 	}
 	return nil
 }
 
+//update status of currenlty processing pod and currently avialble pods in PodWatch
 func (c *Controller) updateStatusForPodWatch(curPodWatch *nahidtrycomv1alpha1.PodWatch, numOfReplicas int32, currentlyP int32)  error {
 	_, err := myutil.PatchPodWatch(c.clientset, curPodWatch, func(podWatch *nahidtrycomv1alpha1.PodWatch) *nahidtrycomv1alpha1.PodWatch {
 		podWatch.Status.AvailabelReplicas = numOfReplicas
@@ -399,6 +476,7 @@ func (c *Controller) updateStatusForPodWatch(curPodWatch *nahidtrycomv1alpha1.Po
 	return err
 }
 
+//generate a random integer
 func genRandomName() string {
 	return strconv.Itoa(rand.Int())
 }
