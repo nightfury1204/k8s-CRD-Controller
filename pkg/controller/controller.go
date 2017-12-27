@@ -211,10 +211,7 @@ func (c *Controller) performOpAccrodingToPodWatch(key string) error {
 		if podWatch.DeletionTimestamp != nil {
 			// finalizer
 			if myutil.HasFinalizer(podWatch.ObjectMeta,"finalizer.podwatch.nahid.try.com") {
-				//delete pods
-				//clear podMapToPodwatch,podStatus
-				c.PodMapToPodWatch = map[string]string {}
-				c.PodStatus = map[string]string {}
+				//delete pods for podwatch
 				err := c.deletePod(podWatch.Spec.LabelSelector.MatchLabels, AllPods)
 				if err!=nil {
 					fmt.Println("failed to delete pod")
@@ -454,6 +451,9 @@ func (c *Controller) deletePod(selector map[string]string ,podDeleteLimit int) e
 		}
 		for _,pod := range podList.Items {
 			if cnt < podDeleteLimit {
+				//clear podMapToPodwatch,podStatus
+				delete(c.PodMapToPodWatch,pod.GetName())
+				delete(c.PodStatus,pod.GetName())
 				err = podClient.Delete(pod.GetName(),&metav1.DeleteOptions{})
 				if err!=nil {
 					return err
